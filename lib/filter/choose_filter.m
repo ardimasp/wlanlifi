@@ -35,6 +35,10 @@ if strcmp(fName,'fetx')
     fcNorm = [2.6e5/5e8,2.34e8/5e8];
 elseif strcmp(fName,'ferx')
     fcNorm = [4.8e4/5e8,2.58e8/5e8];
+elseif strcmp(fName,'fetxtamas')
+    fcNorm = [2.6e5/5e8,20e6/5e8];
+elseif strcmp(fName,'ferxtamas')
+    fcNorm = [30e4/5e8,2e8/5e8];
 else 
     fcNorm = p.Results.fcNorm;
 end
