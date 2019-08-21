@@ -26,10 +26,11 @@ classdef wlanTGbbChannel < matlab.System
 %   fcNormButter        - The cutoff frequency for the butterworth filter
 %   isIncludeDelay      - Include delay due to filters or not
 %   methodDCandAGC      - A method used for DC bias and AGC
-%   varNoiseFloor       - The variance of the noise floor (UNUSED)
+%   varNoiseFloor       - The variance of the noise floor 
 %   isApplyNoise        - Injecting noise before the RX FE
 %   isShotNoise         - Indicator to apply a signal-dependent shot noise
 %   whichFE             - Type of AFEs used
+%   simMethod           - A method to simulate, based on SNR (in dB) or transmit optical power (Watt)
 %   
 %   % References:
 %   % [1] http://www.ieee802.org/11/Reports/tgbb_update.htm
@@ -107,14 +108,16 @@ properties (Nontunable)
     %   Notes: 
     %       Please double check. If the SNR is measured after the wocir, then the power signal can be less 
     %       than db2pow(-100) = 1e-10. Remember that the DC gain of the wocir can be -100 dB.
-    % varNoiseFloor = db2pow(-70-30);
-    varNoiseFloor = 0;
+    varNoiseFloor = db2pow(-70-30);
+    % varNoiseFloor = 0;
     % apply optical noise
     isApplyNoise = false;
     % Add shot noise
     isShotNoise = false;
     %which FE: {'tgbb','tamas'}
     whichFE = 'tgbb'
+    %simMethod: {'snr','ptx'}
+    simMethod = 'snr'
 end
 
 properties (Nontunable)
@@ -145,6 +148,8 @@ end
 properties 
     %SNR
     SNRdB = 100
+    %Ptx: Optical power in Watt
+    Ptx = 1
     %Signal input
     sInput
     %Signal after upsampling
@@ -517,6 +522,10 @@ methods(Access = protected)
         % Clip
         x(x<0) = 0; 
 
+        % Adjust the optical power
+        if strcmp(obj.simMethod,'ptx')
+            x = x*sqrt(obj.Ptx/mean(abs(x).^2));
+        end
         obj.sPos = x;
 
         % Wireless optical CIR
@@ -524,19 +533,24 @@ methods(Access = protected)
         obj.sWOCIR = x;
 
         % Inject noise
-        if obj.isApplyNoise
-            varNoise = mean(abs(x).^2)/db2pow(obj.SNRdB);
-            % UNUSED
-            % First, check the issue in the note about noise floor in the 
-            % properties section
-            % obj.varArtificialNoise = varNoise-obj.varNoiseFloor;
-            % At the meantime, use the following.
-            obj.varArtificialNoise = varNoise;
-            x = x + sqrt(varNoise)*randn(size(x));
-        end
-        if obj.isShotNoise
-            x(x<0) = 0;
-            x = x+sqrt(2*1.6021766208e-19*x*obj.SampleRate/2).*randn(size(x));
+        if strcmp(obj.simMethod,'snr')
+            if obj.isApplyNoise
+                varNoise = mean(abs(x).^2)/db2pow(obj.SNRdB);
+                % UNUSED
+                % First, check the issue in the note about noise floor in the 
+                % properties section
+                % obj.varArtificialNoise = varNoise-obj.varNoiseFloor;
+                % At the meantime, use the following.
+                obj.varArtificialNoise = varNoise;
+                x = x + sqrt(varNoise)*randn(size(x));
+            end
+            if obj.isShotNoise
+                x(x<0) = 0;
+                x = x+sqrt(2*1.6021766208e-19*x*obj.SampleRate/2).*randn(size(x));
+            end
+        elseif strcmp(obj.simMethod,'ptx')
+            % thermal and noise shot are modeled as AWGN 
+            x = x + sqrt(obj.varNoiseFloor)*randn(size(x));
         end
         obj.sNoise = x;
 
