@@ -36,7 +36,8 @@ if strcmp(fName,'fetx')
 elseif strcmp(fName,'ferx')
     fcNorm = [4.8e4/5e8,2.58e8/5e8];
 elseif strcmp(fName,'fetxtamas')
-    fcNorm = [2.6e5/5e8,20e6/5e8];
+    % fcNorm = [2.6e5/5e8,20e6/5e8]; % old
+    fcNorm = [2.6e5/5e8,31e6/5e8];
 elseif strcmp(fName,'ferxtamas')
     fcNorm = [30e4/5e8,2e8/5e8];
 else 
@@ -265,7 +266,8 @@ function [num,den] = getFrontEndTxTamas()
      
     %% Lowpass filter
     n_lo               = 8;             % Filter order
-    f_c_lo             = 20e6 ;     % Cut-off frequency [Hz]
+    % f_c_lo             = 20e6 ;     % old
+    f_c_lo             = 31e6 ;     % Cut-off frequency [Hz]
     [z_lo, p_lo, k_lo] = butter(n_lo, f_c_lo/f_bw);
     [sos_lo, g_lo]     = zp2sos(z_lo, p_lo, k_lo);
      

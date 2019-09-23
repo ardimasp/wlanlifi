@@ -14,7 +14,8 @@ Important documents include:
 ### Requirements
 
 For PHY layer simulations:
-- MATLAB 2018b with WLAN Toolbox Version 2.0
+- MATLAB 2019a with WLAN Toolbox Version 2.0
+- MATLAB 2019a with Curve Fitting Toolbox Version 3.5.9
 
 ## Authors
 

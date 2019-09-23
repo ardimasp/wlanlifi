@@ -44,7 +44,7 @@ classdef wlanTGbbChannel < matlab.System
 %       - The most important thing is to make sure that the steps follow the TGbb spec
 %       - Adds an example in the documentation
 %       - Define a local random generator seed
-%       - Pulse shaping should be replaced by a DAC and an ADC models, especisally for high sample rate
+%       - Pulse shaping should be replaced by a DAC and an ADC models, especially for high sample rate
 
 %   Logs:
 %   16 Aug 19, ardimas (ardimasandipurwita@outlook.com):
@@ -53,6 +53,26 @@ classdef wlanTGbbChannel < matlab.System
 
 
 properties (Nontunable)
+    % %RandomStream Source of random number stream
+    % %   Specify the source of random number stream as one of 'Global
+    % %   stream' | 'mt19937ar with seed'. If RandomStream is set to 'Global
+    % %   stream', the current global random number stream is used for
+    % %   normally distributed random number generation, in which case the
+    % %   reset method only resets the filters. If RandomStream is set to
+    % %   'mt19937ar with seed', the mt19937ar algorithm is used for normally
+    % %   distributed random number generation, in which case the reset
+    % %   method not only resets the filters but also re-initializes the
+    % %   random number stream to the value of the Seed property. The default
+    % %   value of this property is 'Global stream'.
+    % RandomStream = 'Global stream'; 
+    % %Seed Initial seed
+    % %   Specify the initial seed of a mt19937ar random number generator
+    % %   algorithm as a double precision, real, nonnegative integer scalar.
+    % %   This property applies when you set the RandomStream property to
+    % %   'mt19937ar with seed'. The Seed is to re-initialize the mt19937ar
+    % %   random number stream in the reset method. The default value of this
+    % %   property is 1412.
+    % Seed = 1412;
     %Symbol rate (symbols/sec)
     SymbolRate = 20e6;
     %Samples per symbol 
@@ -100,7 +120,9 @@ properties (Nontunable)
     %           depending the max of the absolute value of the input signal and then make it all positive.
     %       AGC -> 
     %           the scaling factor of the input signal is a constant divided by the max of the input signal
-    methodDCandAGC = 'ave'
+    %   'none'
+    methodDCBias = 'ave';
+    methodAGC = 'ave';
     % noise floor
     %   modeling the thermal and shot noise
     %   see https://mentor.ieee.org/802.11/dcn/18/11-18-1423-08-00bb-tgbb-simulation-scenarios.docx
@@ -115,10 +137,17 @@ properties (Nontunable)
     % Add shot noise
     isShotNoise = false;
     %which FE: {'tgbb','tamas'}
-    whichFE = 'tgbb'
-    %simMethod: {'snr','ptx'}
-    simMethod = 'snr'
+    whichFE = 'tgbb';
+    %simMethod: {'snrOptical','ptxOptical','snrBaseband','noNoise'}
+    simMethod = 'noNoise';
+    %AWGN channel only
+    awgnonlymode = false;
 end
+
+% properties (Access = private)
+%     % White Gaussian noise state
+%     pRNGStream
+% end
 
 properties (Nontunable)
     %Packet length or the number of symbols in a packet
@@ -181,6 +210,11 @@ properties
     freqResp_TxAFE
     freqResp_RxAFE
     freqResp_WOCIR
+    %FIR filters
+    firPS
+    firTxAFE
+    firRxAFE
+    firWOCIR
     %Scaling factor
     sfPulseShaped = 1
     sfUpConverted = 1
@@ -222,6 +256,74 @@ methods
             'freqResp_TxAFE',...
             'freqResp_RxAFE',...
             'freqResp_WOCIR'};
+
+        %% Frequency Responses
+        %cirRcos
+        obj.freqResp_cirRcos = getfreqResp(obj.cirRcos,1,obj.fUp,obj.SampleRate,'isIncludeDelay',obj.isIncludeDelay);
+        
+        if obj.isIncludeDelay
+            %Tx AFE
+            obj.freqResp_TxAFE = (freqz(obj.fetx.num,obj.fetx.den,obj.fUp,1e9));
+            %Rx AFE
+            obj.freqResp_RxAFE = (freqz(obj.ferx.num,obj.ferx.den,obj.fUp,1e9));
+        else
+            % without delay : ignore the phase response
+            %Tx AFE
+            obj.freqResp_TxAFE = abs(freqz(obj.fetx.num,obj.fetx.den,obj.fUp,1e9));
+            %Rx AFE
+            obj.freqResp_RxAFE = abs(freqz(obj.ferx.num,obj.ferx.den,obj.fUp,1e9));
+        end
+
+        %WOCIR
+        if obj.useData
+            if strcmp(num2str(obj.whichCase),'S1_D1')
+                % This is how Tamas used the loaded data
+                load('S1_D1.mat')
+                fs = 1e9;
+                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                freqResp_data = (h);
+            elseif strcmp(num2str(obj.whichCase),'S1_D2')
+                % This is how Tamas used the loaded data
+                load('S1_D2.mat')
+                fs = 1e9;
+                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                freqResp_data = (h);
+            elseif strcmp(num2str(obj.whichCase),'S3_D1')
+                % This is how Tamas used the loaded data
+                load('S3_D1.mat')
+                fs = 1e9;
+                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                freqResp_data = (h);
+            elseif strcmp(num2str(obj.whichCase),'S3_D2')
+                % This is how Tamas used the loaded data
+                load('S3_D2.mat')
+                fs = 1e9;
+                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                freqResp_data = (h);
+            elseif strcmp(num2str(obj.whichCase),'industrial_d7')
+                % This is how Tamas used the loaded data
+                load('industrial_d7.mat')
+                fs = 1e9;
+                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                freqResp_data = (h);
+            end
+            if obj.isIncludeDelay % include the phase response, hence complex signal
+                fitObjR=fit(f_data(:),real(freqResp_data(:)),'smoothingspline'); % real
+                fitObjI=fit(f_data(:),imag(freqResp_data(:)),'smoothingspline'); % imag
+                obj.freqResp_WOCIR = arrayfun(@(f) feval(fitObjR,abs(f))+1i*feval(fitObjI,abs(f)),obj.fUp);
+            else
+                freqResp_data = abs(freqResp_data);
+                fitObj=fit(f_data(:),freqResp_data(:),'smoothingspline');
+                obj.freqResp_WOCIR = arrayfun(@(f) feval(fitObj,abs(f)),obj.fUp);
+            end
+        else
+            if obj.useButterworth
+                butterFilt = choose_filter('butter','fcnorm',obj.fcNormButter,'nthOrder',4);
+                obj.freqResp_WOCIR = getfreqResp(butterFilt.num,butterFilt.den,obj.fUp,obj.SampleRate,'isIncludeDelay',obj.isIncludeDelay);
+            else
+                obj.freqResp_WOCIR = ones(size(obj.fUp));
+            end
+        end
 
         figure
         title('Discrete-time Signals')
@@ -381,10 +483,41 @@ methods
 
     end
 
+    % function set.Seed(obj, seed)
+    %     propName = 'Seed';
+    %     validateattributes(seed, {'double'},{'real','scalar','integer','nonnegative','finite'},[class(obj) '.' propName],propName); %#ok<*EMCA
+    %     obj.Seed = seed;
+    % end
+
 end
 
 methods(Access = protected)
+
+    % function setupRNG(obj)
+    %     if ~strcmp(obj.RandomStream,'Global stream')
+    %         if coder.target('MATLAB')   
+    %             obj.pRNGStream = RandStream('mt19937ar','Seed',obj.Seed);
+    %         else
+    %             obj.pRNGStream = coder.internal.RandStream('mt19937ar','Seed',obj.Seed);
+    %         end
+    %     end
+
+    %     if obj.pLegacyGenerator && coder.target('MATLAB')
+    %         obj.pStream = RandStream.getGlobalStream;
+    %         % The obj.pLegacyState is used to initialize the legacy version
+    %         % of the code. The legacy implementation is used for testing
+    %         % only. The legacy implementation compares the channel samples
+    %         % with actual Laurent model. Unlike the shipping version the
+    %         % legacy implementation generates the noise sample row wise.
+    %         obj.pLegacyState = obj.pStream.State; 
+    %     end
+    % end
+
     function setupImpl(obj,varargin)
+
+        % setupRNG(obj);
+
+        disp('> Setup filter coefficients')
 
         % Get the packet length
         obj.lenPacket = length(varargin{1});
@@ -394,6 +527,8 @@ methods(Access = protected)
 
         % CIR for the raised cosine filter
         obj.cirRcos = rcosdesign(obj.beta,obj.span,obj.SamplesPerSymbol);
+        obj.firPS.num = obj.cirRcos;
+        obj.firPS.den = 1;
 
         % Freq. center for the upconversion
         obj.Fc = obj.SymbolRate/2 + obj.Offset;
@@ -417,72 +552,120 @@ methods(Access = protected)
             obj.ferx = choose_filter('ferxtamas');
         end
 
-        %% Magnitude Responses
-        %cirRcos
-        obj.freqResp_cirRcos = getfreqResp(obj.cirRcos,1,obj.fUp,obj.SampleRate,'isIncludeDelay',obj.isIncludeDelay);
-        
-        if obj.isIncludeDelay
-            %Tx AFE
-            obj.freqResp_TxAFE = (freqz(obj.fetx.num,obj.fetx.den,obj.fUp,1e9));
-            %Rx AFE
-            obj.freqResp_RxAFE = (freqz(obj.ferx.num,obj.ferx.den,obj.fUp,1e9));
-        else
-            % without delay : ignore the phase response
-            %Tx AFE
-            obj.freqResp_TxAFE = abs(freqz(obj.fetx.num,obj.fetx.den,obj.fUp,1e9));
-            %Rx AFE
-            obj.freqResp_RxAFE = abs(freqz(obj.ferx.num,obj.ferx.den,obj.fUp,1e9));
+        % The Tx AFE is given with the assumption that the freq. sampling is 1 Gsa/s.
+        % So, if we want to simulate with sampling rate less than 1 Gsa/s, we need to find 
+        % the respective CIR.
+        if obj.SampleRate ~= 1e9
+            if obj.isIncludeDelay
+                %Tx AFE
+                freqResp_TxAFE = (freqz(obj.fetx.num,obj.fetx.den,obj.fUp,1e9));
+                %Rx AFE
+                freqResp_RxAFE = (freqz(obj.ferx.num,obj.ferx.den,obj.fUp,1e9));
+            else
+                % without delay : ignore the phase response
+                %Tx AFE
+                freqResp_TxAFE = abs(freqz(obj.fetx.num,obj.fetx.den,obj.fUp,1e9));
+                %Rx AFE
+                freqResp_RxAFE = abs(freqz(obj.ferx.num,obj.ferx.den,obj.fUp,1e9));
+            end
+
+            obj.firTxAFE.num = getCIRFromFreqResp(freqResp_TxAFE);
+            obj.firTxAFE.den = 1;
+            obj.firRxAFE.num = getCIRFromFreqResp(freqResp_RxAFE);
+            obj.firRxAFE.den = 1;
+
+        else 
+            obj.firTxAFE.num = obj.fetx.num;
+            obj.firTxAFE.den = obj.fetx.den;
+            obj.firRxAFE.num = obj.ferx.num;
+            obj.firRxAFE.den = obj.ferx.den;
         end
 
-        %WOCIR
-        if obj.useData
-            if strcmp(num2str(obj.whichCase),'S1_D1')
-                % This is how Tamas used the loaded data
-                load('S1_D1.mat')
-                fs = 1e9;
-                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
-                freqResp_data = (h);
-            elseif strcmp(num2str(obj.whichCase),'S1_D2')
-                % This is how Tamas used the loaded data
-                load('S1_D2.mat')
-                fs = 1e9;
-                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
-                freqResp_data = (h);
-            elseif strcmp(num2str(obj.whichCase),'S3_D1')
-                % This is how Tamas used the loaded data
-                load('S3_D1.mat')
-                fs = 1e9;
-                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
-                freqResp_data = (h);
-            elseif strcmp(num2str(obj.whichCase),'S3_D2')
-                % This is how Tamas used the loaded data
-                load('S3_D2.mat')
-                fs = 1e9;
-                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
-                freqResp_data = (h);
-            elseif strcmp(num2str(obj.whichCase),'industrial_d7')
-                % This is how Tamas used the loaded data
-                load('industrial_d7.mat')
-                fs = 1e9;
-                [h,f_data] = freqz(averun2,1,2001,'whole',fs);
-                freqResp_data = (h);
-            end
-            if obj.isIncludeDelay % include the phase response, hence complex signal
-                fitObjR=fit(f_data(:),real(freqResp_data(:)),'smoothingspline'); % real
-                fitObjI=fit(f_data(:),imag(freqResp_data(:)),'smoothingspline'); % imag
-                obj.freqResp_WOCIR = arrayfun(@(f) feval(fitObjR,abs(f))+1i*feval(fitObjI,abs(f)),obj.fUp);
+        if obj.SampleRate ~= 1e9
+            if obj.useData
+                if strcmp(num2str(obj.whichCase),'S1_D1')
+                    % This is how Tamas used the loaded data
+                    load('S1_D1.mat')
+                    fs = 1e9;
+                    [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                    freqResp_data = (h);
+                elseif strcmp(num2str(obj.whichCase),'S1_D2')
+                    % This is how Tamas used the loaded data
+                    load('S1_D2.mat')
+                    fs = 1e9;
+                    [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                    freqResp_data = (h);
+                elseif strcmp(num2str(obj.whichCase),'S3_D1')
+                    % This is how Tamas used the loaded data
+                    load('S3_D1.mat')
+                    fs = 1e9;
+                    [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                    freqResp_data = (h);
+                elseif strcmp(num2str(obj.whichCase),'S3_D2')
+                    % This is how Tamas used the loaded data
+                    load('S3_D2.mat')
+                    fs = 1e9;
+                    [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                    freqResp_data = (h);
+                elseif strcmp(num2str(obj.whichCase),'industrial_d7')
+                    % This is how Tamas used the loaded data
+                    load('industrial_d7.mat')
+                    fs = 1e9;
+                    [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                    freqResp_data = (h);
+                end
+                if obj.isIncludeDelay % include the phase response, hence complex signal
+                    fitObjR=fit(f_data(:),real(freqResp_data(:)),'smoothingspline'); % real
+                    fitObjI=fit(f_data(:),imag(freqResp_data(:)),'smoothingspline'); % imag
+                    freqResp_WOCIR = arrayfun(@(f) feval(fitObjR,abs(f))+1i*feval(fitObjI,abs(f)),obj.fUp);
+                else
+                    freqResp_data = abs(freqResp_data);
+                    fitObj=fit(f_data(:),freqResp_data(:),'smoothingspline');
+                    freqResp_WOCIR = arrayfun(@(f) feval(fitObj,abs(f)),obj.fUp);
+                end
             else
-                freqResp_data = abs(freqResp_data);
-                fitObj=fit(f_data(:),freqResp_data(:),'smoothingspline');
-                obj.freqResp_WOCIR = arrayfun(@(f) feval(fitObj,abs(f)),obj.fUp);
+                if obj.useButterworth
+                    butterFilt = choose_filter('butter','fcnorm',obj.fcNormButter,'nthOrder',4);
+                    freqResp_WOCIR = getfreqResp(butterFilt.num,butterFilt.den,obj.fUp,obj.SampleRate,'isIncludeDelay',obj.isIncludeDelay);
+                else
+                    freqResp_WOCIR = ones(size(obj.fUp));
+                end
             end
+
+            obj.firWOCIR.num = getCIRFromFreqResp(freqResp_WOCIR);
+            obj.firWOCIR.den = 1;
         else
-            if obj.useButterworth
-                butterFilt = choose_filter('butter','fcnorm',obj.fcNormButter,'nthOrder',4);
-                obj.freqResp_WOCIR = getfreqResp(butterFilt.num,butterFilt.den,obj.fUp,obj.SampleRate,'isIncludeDelay',obj.isIncludeDelay);
+
+            if obj.useData
+                if strcmp(num2str(obj.whichCase),'S1_D1')
+                    % This is how Tamas used the loaded data
+                    load('S1_D1.mat')
+                elseif strcmp(num2str(obj.whichCase),'S1_D2')
+                    % This is how Tamas used the loaded data
+                    load('S1_D2.mat')
+                elseif strcmp(num2str(obj.whichCase),'S3_D1')
+                    % This is how Tamas used the loaded data
+                    load('S3_D1.mat')
+                elseif strcmp(num2str(obj.whichCase),'S3_D2')
+                    % This is how Tamas used the loaded data
+                    load('S3_D2.mat')
+                elseif strcmp(num2str(obj.whichCase),'industrial_d7')
+                    % This is how Tamas used the loaded data
+                    load('industrial_d7.mat')
+                end
+                obj.firWOCIR.num = averun2;
+                obj.firWOCIR.den = 1;
             else
-                obj.freqResp_WOCIR = ones(size(obj.fUp));
+                if obj.useButterworth
+                    butterFilt = choose_filter('butter','fcnorm',obj.fcNormButter,'nthOrder',4);
+                    freqResp_WOCIR = getfreqResp(butterFilt.num,butterFilt.den,obj.fUp,obj.SampleRate,'isIncludeDelay',obj.isIncludeDelay);
+                else
+                    freqResp_WOCIR = ones(size(obj.fUp));
+                end
+                obj.firWOCIR.num = getCIRFromFreqResp(freqResp_WOCIR);
+                obj.firWOCIR.den = 1;
             end
+
         end
 
     end
@@ -498,7 +681,7 @@ methods(Access = protected)
         obj.sUpsampled = x;
 
         % Pulse shaping
-        x = filtering(x,obj.freqResp_cirRcos);
+        x = filter(obj.firPS.num,obj.firPS.den,x);
         [x,obj.sfPulseShaped] = normalize(x,input); 
         obj.sPulseShaped = x;
 
@@ -508,15 +691,17 @@ methods(Access = protected)
         obj.sUpconverted = x;
 
         % Tx AFE
-        x = filteringReal(x,obj.freqResp_TxAFE);
+        x = filter(obj.firTxAFE.num,obj.firTxAFE.den,x);
         obj.sTx = x;
 
         % DC bias
-        if strcmp(obj.methodDCandAGC,'ave')
+        if strcmp(obj.methodDCBias,'ave')
             x = x+obj.ClippingRatio*sqrt(var(x));
-        elseif strcmp(obj.methodDCandAGC,'max')
+        elseif strcmp(obj.methodDCBias,'max')
             x = x/max(abs(x));
             x = x+1;
+        elseif strcmp(obj.methodDCBias,'none')
+            % do nothing
         end
 
         % Clip
@@ -529,11 +714,13 @@ methods(Access = protected)
         obj.sPos = x;
 
         % Wireless optical CIR
-        x = filteringReal(x,obj.freqResp_WOCIR);
+        if ~obj.awgnonlymode
+            x = filter(obj.firWOCIR.num,obj.firWOCIR.den,x);
+        end
         obj.sWOCIR = x;
 
         % Inject noise
-        if strcmp(obj.simMethod,'snr')
+        if strcmp(obj.simMethod,'snrOptical')
             if obj.isApplyNoise
                 varNoise = mean(abs(x).^2)/db2pow(obj.SNRdB);
                 % UNUSED
@@ -548,22 +735,29 @@ methods(Access = protected)
                 x(x<0) = 0;
                 x = x+sqrt(2*1.6021766208e-19*x*obj.SampleRate/2).*randn(size(x));
             end
-        elseif strcmp(obj.simMethod,'ptx')
+        elseif strcmp(obj.simMethod,'ptxOptical')
             % thermal and noise shot are modeled as AWGN 
             x = x + sqrt(obj.varNoiseFloor)*randn(size(x));
+        elseif strcmp(obj.simMethod,'noNoise')
+            % do nothing
         end
         obj.sNoise = x;
 
         % Rx AFE
-        x = filteringReal(x,obj.freqResp_RxAFE);
+        x = filter(obj.firRxAFE.num,obj.firRxAFE.den,x);
         obj.sRx = x;
 
         % AGC
-        if strcmp(obj.methodDCandAGC,'ave')
+        % Adjust the amplitude
+        if strcmp(obj.methodAGC,'ave')
+            % Zero mean the input signal
+            x = x-mean(x);
             [x,obj.sfAGC] = normalize(x,obj.sUpconverted);
-        elseif strcmp(obj.methodDCandAGC,'max')
+        elseif strcmp(obj.methodAGC,'max')
             obj.sfAGC = 3/max(x);
             x = x*obj.sfAGC;
+        elseif strcmp(obj.methodAGC,'none')
+            % do nothing
         end
         obj.sAGC = x;
 
@@ -573,7 +767,7 @@ methods(Access = protected)
 
         % Anti-aliasing
         % Optimal matched filter
-        x = filtering(x,conj(obj.freqResp_cirRcos));
+        x = filter(flipud(obj.firPS.num),obj.firPS.den,x);
         obj.sMatchFiltered = x;
         
         % Downsampling
@@ -629,6 +823,32 @@ end
 
 function y = downConversion(x,fc,t)
     y = x.*cos(2*pi*fc*t)+1i*x.*sin(2*pi*fc*t);
+end
+
+function cir = getCIRFromFreqResp(freqResp,varargin)
+    %Obtain the time-domain CIR from a frequency response
+    % This function is useful especially if the given frequency response is 
+    % generated with sampling frequency that is not the same as the simulated one.
+
+    getRealCIR = @(freqResp) ifft( ifftshift( freqResp ), 'symmetric' );
+    getCmplxCIR = @(freqResp) ifft( ifftshift( freqResp ) );
+
+    p = inputParser;
+    addOptional(p,'isReal',true,@(x) validateattributes(x,{'logical'},{'scalar'}))
+    parse(p,varargin{:});
+    isReal = p.Results.isReal;
+
+    if isReal
+        cir = getRealCIR(freqResp);
+    else
+        cir = getCmplxCIR(freqResp);
+    end
+
+    % Choose the significant ones
+    threshold = 1-1e-6;      % energy threshold above which impulse respone is neglected
+    E = cumsum(abs(cir).^2)/sum(abs(cir).^2);
+    cir = cir(E < threshold);
+
 end
 
 

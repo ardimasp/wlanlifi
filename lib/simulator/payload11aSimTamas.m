@@ -22,7 +22,8 @@ tgbbChannel.SamplesPerSymbol    = SamplesPerSymbol;
 
 tgbbChannel.isShotNoise         = true;
 tgbbChannel.beta                = 0.1;
-tgbbChannel.methodDCandAGC      = 'max';
+tgbbChannel.methodDCBias        = 'max';
+tgbbChannel.methodAGC           = 'max';
 tgbbChannel.whichFE             = 'tamas';
 
 numSNR = numel(snr); % Number of SNR points

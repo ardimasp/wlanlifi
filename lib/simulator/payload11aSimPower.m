@@ -20,7 +20,7 @@ tgbbChannel.SamplesPerSymbol    = SamplesPerSymbol;
 
 tgbbChannel.isShotNoise         = false;
 tgbbChannel.beta                = 0.1;
-tgbbChannel.simMethod           = 'ptx';
+tgbbChannel.simMethod           = 'ptxOptical';
 
 numPTX = numel(ptx); % Number of Ptx points
 packetErrorRate = zeros(1,numPTX);
