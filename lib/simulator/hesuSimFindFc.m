@@ -35,9 +35,9 @@ tgbbChannel.Offset              = centerFreq - sr/2;
 % tgbbChannel.whichFE             = 'tamas';
 
 if ~isempty(varargin)
-    filename = ['hesuFindFc_' 'MCS' num2str(cfgHE.MCS) '_fc' num2str(centerFreq/6) 'MHz' '_' varargin{1} '.mat'];
+    filename = ['hesuFindFc_' 'MCS' num2str(cfgHE.MCS) '_fc' num2str(centerFreq/1e6) 'MHz' '_' varargin{1} '.mat'];
 else
-    filename = ['hesuFindFc_' 'MCS' num2str(cfgHE.MCS) '_fc' num2str(centerFreq/6) 'MHz' '.mat'];
+    filename = ['hesuFindFc_' 'MCS' num2str(cfgHE.MCS) '_fc' num2str(centerFreq/1e6) 'MHz' '.mat'];
 end
 
 numSNR = numel(snr); % Number of SNR points
