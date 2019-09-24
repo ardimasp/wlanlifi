@@ -207,10 +207,6 @@ for isnr = 1:numSNR
         %% Interpret Recovered HE-SIG-A bits
         ind = wlanFieldIndices(cfgHE); % Update field indices
 
-        numUsers = 1;
-
-        constellationDiagram = heSigEqualizeSetupPlots(numUsers);
-
         % HE-LTF demodulation and channel estimation
         rxHELTF = rx(pktOffset+(ind.HELTF(1):ind.HELTF(2)),:);
         heltfDemod = wlanHEDemodulate(rxHELTF,'HE-LTF',cfgHE);
