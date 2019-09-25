@@ -517,7 +517,7 @@ methods(Access = protected)
 
         % setupRNG(obj);
 
-        disp('> Setup filter coefficients')
+        % disp('> Setup filter coefficients')
 
         % Get the packet length
         obj.lenPacket = length(varargin{1});
@@ -613,6 +613,11 @@ methods(Access = protected)
                     fs = 1e9;
                     [h,f_data] = freqz(averun2,1,2001,'whole',fs);
                     freqResp_data = (h);
+                else 
+                    load(obj.whichCase)
+                    fs = 1e9;
+                    [h,f_data] = freqz(averun2,1,2001,'whole',fs);
+                    freqResp_data = (h);
                 end
                 if obj.isIncludeDelay % include the phase response, hence complex signal
                     fitObjR=fit(f_data(:),real(freqResp_data(:)),'smoothingspline'); % real
@@ -652,6 +657,8 @@ methods(Access = protected)
                 elseif strcmp(num2str(obj.whichCase),'industrial_d7')
                     % This is how Tamas used the loaded data
                     load('industrial_d7.mat')
+                else 
+                    load(obj.whichCase)
                 end
                 obj.firWOCIR.num = averun2;
                 obj.firWOCIR.den = 1;
